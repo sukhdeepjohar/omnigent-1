@@ -311,3 +311,75 @@ def test_a_floating_pane_shows_its_handle_on_hover_and_lifts_when_pressed(
     page.wait_for_function(
         "el => parseFloat(el.style.left) === 0", arg=shell_pane.element_handle(), timeout=15_000
     )
+
+
+# Records the page's pointer releases and each pointer capture it loses, in order.
+_WATCH_CAPTURE = """
+window.__pointerEnds = [];
+for (const type of ["lostpointercapture", "pointerup", "pointercancel"]) {
+  document.addEventListener(type, (event) => {
+    const target = event.target;
+    const name = target instanceof Element ? target.getAttribute("aria-label") : null;
+    window.__pointerEnds.push(`${type}:${name ?? "other"}`);
+  }, true);
+}
+"""
+
+
+@pytest.mark.parametrize("view", ["chat", "terminal"])
+@pytest.mark.parametrize("capture", ["kept", "dropped"])
+def test_a_floating_split_resizes_through_a_whole_drag(
+    page: Page, panes_session: tuple[str, str], view: str, capture: str
+) -> None:
+    """With floating panes, dragging the divider beside a shell that has the keyboard saves the
+    new size on release. That holds when the macOS app drops the divider's pointer capture just
+    before the release, which then lands on the pane under the pointer."""
+    base_url, session_id = panes_session
+    page.add_init_script(_WATCH_CAPTURE)
+    unsaved: list[str] = []
+    page.on(
+        "console",
+        lambda message: (
+            unsaved.append(message.text) if "drag ended unsaved" in message.text else None
+        ),
+    )
+    _open(page, base_url, session_id, floating=True)
+    expect(page.locator(".app-shell[data-floating-panes]")).to_have_count(1)
+    _select_view(page, "terminal")
+    panes = _main_panes(page)
+    agent = _connected(panes.locator(_AGENT_PANE).get_by_test_id("terminal-view"))
+    shell = _split_from(page, panes, agent)
+    if view == "chat":
+        _select_view(page, "chat")
+        expect(panes.locator("[data-chat-pane-body]")).to_be_visible(timeout=30_000)
+    shell = _connected(panes.get_by_test_id("terminal-view").last)
+    shell.focus()
+    expect(shell).to_be_focused()
+
+    divider = panes.get_by_test_id("terminal-split-divider")
+    expect(divider).to_have_attribute("aria-valuenow", "50")
+    box = divider.bounding_box()
+    assert box is not None
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.evaluate("window.__pointerEnds = []")
+    page.mouse.down()
+    # A person's drag: small moves across most of a second, past the panes' resize settling.
+    for step in range(1, 21):
+        page.mouse.move(x - step * 8, y)
+        page.wait_for_timeout(40)  # custom-lint: disable=sleep-then-assert -- paces the drag
+    if capture == "dropped":
+        # As the macOS app does: the capture ends as the release comes, not before.
+        divider.evaluate("el => el.releasePointerCapture(1)")
+    page.mouse.up()
+
+    page.wait_for_function("window.__pointerEnds.some(end => end.startsWith('lost'))")
+    ends = page.evaluate("window.__pointerEnds")
+    if capture == "kept":
+        # The divider keeps the pointer until its release, which then lets it go.
+        assert ends[0] == "pointerup:Resize terminal panes", ends
+    else:
+        assert ends[0] == "lostpointercapture:Resize terminal panes", ends
+        assert ends[1] != "pointerup:Resize terminal panes", ends
+    assert unsaved == []
+    expect(divider).not_to_have_attribute("aria-valuenow", "50")
