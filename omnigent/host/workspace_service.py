@@ -78,7 +78,7 @@ from omnigent.host import workspace_fuzzy
 from omnigent.host.frames import HostWorkspaceCallFrame, HostWorkspaceReplyFrame
 from omnigent.host.workspace_git import comparison, context, working_copy
 from omnigent.host.workspace_git.ignored import DirectoryIgnores
-from omnigent.host.workspace_git.runner import Deadline, GitError
+from omnigent.host.workspace_git.runner import Deadline, GitError, runs_on_this_host
 from omnigent.host.workspace_methods import WORKSPACE_METHODS
 from omnigent.host.workspace_search import search_files, search_text
 from omnigent.host.workspace_tokens import new_token_key, verify_token
@@ -121,7 +121,9 @@ class _Served:
 
 # The methods this host answers. Only these, and GetCapabilities, are dispatched.
 _SERVED: dict[str, _Served] = {
-    "ListDirectory": _Served(optional_features=lambda: _git_features("gitignore")),
+    "ListDirectory": _Served(
+        optional_features=lambda: ("gitignore",) if _reads_ignore_rules() else ()
+    ),
     "ReadFile": _Served(),
     "StatPath": _Served(),
     "ReadLinkText": _Served(),
@@ -140,9 +142,9 @@ _SERVED: dict[str, _Served] = {
 }
 
 
-def _git_features(*features: str) -> tuple[str, ...]:
-    """``features``, offered only while ``git`` is on ``PATH``."""
-    return features if shutil.which("git") else ()
+def _reads_ignore_rules() -> bool:
+    """Whether listings can ask Git what it ignores: ``git`` is on ``PATH`` and can run here."""
+    return bool(shutil.which("git")) and runs_on_this_host()
 
 
 def capabilities() -> list[str]:
@@ -352,7 +354,7 @@ class WorkspaceService(WorkspaceServiceMethods):
 
 async def _directory_ignores(directory: Path, deadline: Deadline) -> DirectoryIgnores | None:
     """The listed directory's ignore rules; none without Git, so the listing still answers."""
-    if not shutil.which("git"):
+    if not _reads_ignore_rules():
         return None
     try:
         return await DirectoryIgnores.for_directory(directory, deadline)
