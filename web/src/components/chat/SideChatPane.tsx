@@ -1151,15 +1151,20 @@ function SideChatComposer({
     document.addEventListener("focusin", cancelOnOtherInput);
     return () => document.removeEventListener("focusin", cancelOnOtherInput);
   }, [autoFocus, ready, dropFocusRequest]);
-  const canSend =
-    serializeReplyDraft({ quotes, text }).trim().length > 0 ||
-    (!pending && files.length > 0) ||
-    reviewComments.length > 0;
   // The tags and review comments a send carries. A grid cell's come from its session draft.
   const sharedTags = presentTaggedMentions(sessionMentions, [
     text,
     ...quotes.map((replyQuote) => replyQuote.before),
   ]);
+  // A pasted chip the shared draft still shows sends its file with the tray's.
+  const attachedFiles = [
+    ...files,
+    ...(sharedTags?.attachments ?? []).map((attachment) => attachment.file),
+  ];
+  const canSend =
+    serializeReplyDraft({ quotes, text }).trim().length > 0 ||
+    (!pending && attachedFiles.length > 0) ||
+    reviewComments.length > 0;
   const sendContext: ComposerSendContext = {
     mentions: composerInlineMentions(sharedTags ?? { files: [], sessions: [] }, harness ?? null),
     reviewComments,
@@ -1299,7 +1304,7 @@ function SideChatComposer({
       !pending &&
       !nativeSession &&
       !mentionMenuOpen &&
-      !carriesMessageContext({ quotes, text }, files, sendContext),
+      !carriesMessageContext({ quotes, text }, attachedFiles, sendContext),
     onSelect: applyMenuSelection,
     onTabComplete: completeMenuSelection,
     clearText: () => setText(""),
@@ -1319,9 +1324,9 @@ function SideChatComposer({
   const highlight = useComposerHighlight({
     value: text,
     commandNames: menuCommandNames,
-    enabled: quotes.length === 0 && files.length === 0,
+    enabled: quotes.length === 0 && attachedFiles.length === 0,
     // Files go out as separate blocks, so the message is no longer a lone `!` text.
-    shellEnabled: files.length === 0,
+    shellEnabled: attachedFiles.length === 0,
     nativeShell,
     refusedNativeShell:
       pending || !session ? null : ownerOnlyShellHarness(harness, session.permissionLevel ?? null),
@@ -1367,7 +1372,7 @@ function SideChatComposer({
     // (claude-native, codex-native) read the text themselves, and a quote, attachment,
     // tag or review comment is always an ordinary message.
     const routeLocally =
-      !nativeSession && !carriesMessageContext({ quotes, text }, files, sendContext);
+      !nativeSession && !carriesMessageContext({ quotes, text }, attachedFiles, sendContext);
     // A lone command token with skill discovery in flight has nothing to run
     // yet; only hold when the submission would route locally.
     if (routeLocally && slashCompletion.pendingCompletion) return;
@@ -1400,7 +1405,7 @@ function SideChatComposer({
       runSkill(skill);
       return;
     }
-    const outgoing = files.length > 0 ? files : undefined;
+    const outgoing = attachedFiles.length > 0 ? attachedFiles : undefined;
     // A grid cell sends what the full-screen composer sends: tags expanded, review comments kept.
     const composed = gridCell
       ? buildOutgoingMessage({ quotes, text }, trimmed, sendContext)
@@ -1552,7 +1557,7 @@ function SideChatComposer({
         draftKey={childId}
         activeInputId={activeTextId ?? COMPOSER_TAIL_INPUT_ID}
         onActiveInputChange={rebindActiveInput}
-        hasContent={!pending && files.length > 0}
+        hasContent={!pending && attachedFiles.length > 0}
         data-side-chat="true"
         keyboard={{ submitWithModEnter: false, preventsKeyboardSubmit: false }}
         className={highlight.cardClassName}
