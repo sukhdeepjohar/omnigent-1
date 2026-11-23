@@ -61,6 +61,17 @@ export interface WorkspaceSidebarTabActionsOptions {
   closeStepsFor?: (tab: WorkspaceTab) => TabCloseSteps;
   /** Releases what closing others leaves behind, such as a browser view. */
   releaseFor?: (tab: WorkspaceTab) => (() => Promise<boolean>) | undefined;
+  /**
+   * Closes the strip entry `tabId` stands for when the host shows several tabs as one, such as
+   * a split, returning the close; null to close it as a tab. Used by Close tab, its chord and ⌘W.
+   */
+  closeEntry?: (tabId: TabId, source?: "pointer") => Promise<{ ok: boolean }> | null;
+  /**
+   * Moves the strip entry `tabId` is in one entry over, with every tab it stands for, where the
+   * host shows several tabs as one; true once handled, even with no entry to move past, and
+   * false to move it as a tab. Used by Move Tab Left and Right, their chords and the menu.
+   */
+  moveEntry?: (tabId: TabId, delta: -1 | 1) => boolean;
   /** The actions only some hosts offer. */
   offers?: { newTab?: () => void; searchTabs?: () => void };
   /** Offers Pin and Unpin, for a strip that shows pinned tabs; `refusalFor` says why a tab can't. */
@@ -86,6 +97,8 @@ export function useWorkspaceSidebarTabActions(options: WorkspaceSidebarTabAction
     canClose = () => true,
     closeStepsFor,
     releaseFor,
+    closeEntry,
+    moveEntry,
     offers = {},
     pinning,
     onReveal,
@@ -100,20 +113,34 @@ export function useWorkspaceSidebarTabActions(options: WorkspaceSidebarTabAction
     const tab = store.findTab(tabId);
     if (tab && !canClose(tab)) return;
     const closing = store.close(tabId, tab && closeStepsFor ? closeStepsFor(tab) : {});
-    // A pointer close keeps the strip still under the pointer, so only a keyboard close moves focus.
-    if (source !== "pointer") {
-      void keepSidebarFocusAfterClose(
-        closing,
-        () => store.snapshot().selectedTabId,
-        fromSidebar ?? isFocusInWorkspaceSidebar(),
-      );
-    }
+    keepFocusAfterKeyboardClose(closing, source, fromSidebar);
+  };
+  // A pointer close keeps the strip still under the pointer, so only a keyboard close moves focus.
+  const keepFocusAfterKeyboardClose = (
+    closing: Promise<{ ok: boolean }>,
+    source: "pointer" | undefined,
+    fromSidebar: boolean | undefined,
+  ) => {
+    if (source === "pointer") return;
+    void keepSidebarFocusAfterClose(
+      closing,
+      () => store.snapshot().selectedTabId,
+      fromSidebar ?? isFocusInWorkspaceSidebar(),
+    );
+  };
+  // The tab the strip shows for `tabId`: a split closes as one, keeping focus as a tab's close does.
+  const closeVisibleTab = (tabId: TabId, source?: "pointer", fromSidebar?: boolean) => {
+    const inSidebar = fromSidebar ?? isFocusInWorkspaceSidebar();
+    const closing = closeEntry?.(tabId, source) ?? null;
+    if (closing === null) closeTab(tabId, source, inSidebar);
+    else keepFocusAfterKeyboardClose(closing, source, inSidebar);
   };
   // Shells stay: closing others shouldn't end every shell with a dialog each.
   const closeOtherTabs = (keepTabId: TabId) => {
     void store.closeOthers(keepTabId, releaseFor ?? (() => undefined));
   };
   const moveTab = (tabId: TabId, delta: -1 | 1) => {
+    if (moveEntry?.(tabId, delta)) return;
     const index = store.tabs().findIndex((tab) => tab.id === tabId);
     if (index !== -1) store.move(tabId, index + delta);
   };
@@ -133,8 +160,8 @@ export function useWorkspaceSidebarTabActions(options: WorkspaceSidebarTabAction
     if (store.reopenClosed() !== null) onReveal?.();
   };
 
-  const selectedIndex =
-    selectedTabId === null ? -1 : tabs.findIndex((tab) => tab.id === selectedTabId);
+  // Moves and Close Others go by the strip's entries, a split being one.
+  const selectedIndex = selectedEntryId === null ? -1 : entryIds.indexOf(selectedEntryId);
   const selectedTab = selectedTabId === null ? undefined : store.findTab(selectedTabId);
   const facts: WorkspaceTabListFacts = {
     canReopen,
@@ -142,7 +169,7 @@ export function useWorkspaceSidebarTabActions(options: WorkspaceSidebarTabAction
     selectedPinned: selectedTab !== undefined && isPinnedTab(selectedTab),
     selectedPinRefusal: selectedTabId === null ? undefined : pinning?.refusalFor?.(selectedTabId),
     selectedIndex,
-    tabCount: tabs.length,
+    tabCount: entryIds.length,
     sidebarOpen,
     selectedCloseRefusal: selectedTabId === null ? undefined : closeRefusalFor?.(selectedTabId),
     selectedIsOnlyEmptyNewTab: selectedTabId !== null && isOnlyEmptyNewTab(tabs, selectedTabId),
@@ -166,7 +193,7 @@ export function useWorkspaceSidebarTabActions(options: WorkspaceSidebarTabAction
         return;
       case "close-tab":
         if (selectedTabId !== null) {
-          closeTab(selectedTabId, undefined, origin?.fromWorkspaceSidebar);
+          closeVisibleTab(selectedTabId, undefined, origin?.fromWorkspaceSidebar);
         }
         return;
       case "reopen":
@@ -296,6 +323,7 @@ export function useWorkspaceSidebarTabActions(options: WorkspaceSidebarTabAction
     facts,
     run,
     closeTab,
+    closeVisibleTab,
     closeOtherTabs,
     moveTab,
     togglePin,
