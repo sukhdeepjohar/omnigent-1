@@ -389,7 +389,7 @@ const PROJECT_KANBAN_OFF =
 const PROACTIVE_AGENT_OFF =
   "Shows only where the server offers the proactive agent, which no scenario sets up yet.";
 const FLOATING_PANES_UNAVAILABLE =
-  "Shows only where sidebar v2 or floating panes is on, which no scenario turns on.";
+  "Shows only where sidebar v2 or floating panes is on; the web › sidebar v2 scenario checks it.";
 const APPEARANCE_HIDES = { "pane-corners": FLOATING_PANES_UNAVAILABLE };
 const GENERAL_WEB_HIDES = {
   "open-links-in-app": DESKTOP_ONLY,
