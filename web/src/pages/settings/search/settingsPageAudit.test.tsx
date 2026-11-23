@@ -388,6 +388,9 @@ const PROJECT_KANBAN_OFF =
   "Shows only when the server turns on project kanban, which no scenario does.";
 const PROACTIVE_AGENT_OFF =
   "Shows only where the server offers the proactive agent, which no scenario sets up yet.";
+const FLOATING_PANES_UNAVAILABLE =
+  "Shows only where sidebar v2 or floating panes is on, which no scenario turns on.";
+const APPEARANCE_HIDES = { "pane-corners": FLOATING_PANES_UNAVAILABLE };
 const GENERAL_WEB_HIDES = {
   "open-links-in-app": DESKTOP_ONLY,
   "global-shortcut": DESKTOP_ONLY,
@@ -874,6 +877,7 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
   },
   {
     section: "appearance",
+    hides: APPEARANCE_HIDES,
     scenario: "web",
     ready: ["Settings data"],
     // Collapsing project sessions is on by default, so its page size shows.
@@ -898,6 +902,14 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
   },
   {
     section: "appearance",
+    scenario: "web › sidebar v2",
+    info: { features: { ...SERVER_INFO.features, workspace_sidebar_v2: true } },
+    ready: ["Settings data"],
+    states: { "project-folder-pagination": ["collapsed"] },
+  },
+  {
+    section: "appearance",
+    hides: APPEARANCE_HIDES,
     scenario: "web › custom palette",
     setup: () => writeThemePalette("custom"),
     ready: ["Background tint"],
@@ -917,6 +929,7 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
   },
   {
     section: "appearance",
+    hides: APPEARANCE_HIDES,
     scenario: "web › agents failed to load",
     routes: [{ url: "/v1/agents", status: 500, body: {} }],
     ready: ["Couldn't load this server's harnesses and agents."],
@@ -924,6 +937,7 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
   },
   {
     section: "appearance",
+    hides: APPEARANCE_HIDES,
     scenario: "web › in a Databricks embed",
     embedded: true,
     setup: () =>
