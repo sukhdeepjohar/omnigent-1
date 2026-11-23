@@ -29,7 +29,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ShellCommandContext, ShellCommandDraftContext } from "./ShellCommandContext";
+import { useSplitBesideChat } from "./chatPaneToolbarHost";
 import { ChatPaneStrip } from "./ChatPaneStrip";
+import { usePanesView } from "./panesViewGate";
 import { useFloatingPanes, useFloatingPanesShown } from "./useFloatingPanes";
 import {
   Outlet,
@@ -421,6 +423,8 @@ function AppShellImpl() {
   const tabsSidebar = useTabsSidebar();
   const floatingPanes = useFloatingPanes();
   const floatingPanesShown = useFloatingPanesShown();
+  const panesView = usePanesView();
+  const splitBesideChat = useSplitBesideChat(conversationId);
   const tabsModeRef = useRef(false);
   tabsModeRef.current = tabsSidebar;
   const tabsSessionRef = useRef<string | null>(null);
@@ -3130,8 +3134,16 @@ function AppShellImpl() {
   const isShellView = terminalFirst && !!panelInitialKey && !isAgentTerminalKey(panelInitialKey);
   // A terminal-first chat's card has a row of its own, over its Chat and Terminal views, which
   // takes the Chat/Terminal switch. A sidebar shell in the main view has no switch to hold.
+  // With floating panes a split shows as cards of its own, in Chat and Terminal, so the session's
+  // column is no card then; a lone pane stays the chat's card, its row holding the view switch.
+  const panesDrawCards = floatingPanesShown && panesView && splitBesideChat;
   const chatPaneStrip =
-    floatingPanesShown && !!conversationId && terminalFirst && !isShellView && !mobileViewport;
+    floatingPanesShown &&
+    !!conversationId &&
+    terminalFirst &&
+    !isShellView &&
+    !mobileViewport &&
+    !panesDrawCards;
   const shellViewTargetAvailable =
     isShellView && terminals.some((terminal) => terminalTabKey(terminal) === panelInitialKey);
 
@@ -3400,8 +3412,8 @@ function AppShellImpl() {
               <div
                 data-workspace-panel-resizing={inlinePanelResizing || undefined}
                 data-workspace-panel-animate={rightPanelVisibilityAnimating || undefined}
-                // A session's column, whose chat page (its terminal view included) floats as one pane.
-                data-main-view={conversationId ? "chat" : undefined}
+                // A session's chat floats as one pane; the panes view floats its own cards.
+                data-main-view={conversationId ? (panesDrawCards ? "terminal" : "chat") : undefined}
                 className={cn(
                   "relative flex min-h-0 min-w-0 flex-1",
                   panelOpen && !terminalFirst && "md:hidden",
