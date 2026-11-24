@@ -2902,6 +2902,8 @@ function ComposerImpl(
   });
   const filesRef = useRef(files);
   filesRef.current = files;
+  // What a saved draft carries: the tray plus the live chips, which leave the composer as tray files.
+  const draftFilesRef = useRef<File[]>([]);
   // The restore effects below key off conversation state and reach the
   // attachment actions through a ref rather than widening their dependency
   // lists.
@@ -2936,7 +2938,7 @@ function ComposerImpl(
       if (!conversationId || !dirtyRef.current) return;
       setSessionDraft(conversationId, {
         text: valueRef.current,
-        files: filesRef.current,
+        files: draftFilesRef.current,
         replyDraft: replyDraftRef.current,
         mentions: taggedMentionsRef.current,
       });
@@ -2979,7 +2981,7 @@ function ComposerImpl(
     if (!conversationId || settledConversationId !== conversationId || !dirtyRef.current) return;
     setSessionDraft(conversationId, {
       text: fullText,
-      files,
+      files: draftFilesRef.current,
       replyDraft: storedReplyDraft,
       // Tagging always edits the text too, so fullText re-runs this effect.
       mentions: taggedMentionsRef.current,
@@ -3266,6 +3268,7 @@ function ComposerImpl(
       .filter((attachment) => liveTokens.has(attachment.token))
       .map((attachment) => attachment.file),
   ];
+  draftFilesRef.current = attachedFiles;
   const sendContext = { mentions: liveMentions, reviewComments: localReviewComments };
   // Review comments are appended at send, which can make a bare `!` a command.
   const outgoingClassifyText = useMemo(
@@ -3311,11 +3314,7 @@ function ComposerImpl(
   // Drain externally-queued attachments (file viewer "Attach to agent") into
   // tagged items and inline tokens, deduping against what's already tagged,
   // then clear the store queue so they aren't re-applied.
-  taggedMentionsRef.current = {
-    files: mentionedItems,
-    sessions: mentionedSessions,
-    attachments: mentionedAttachments,
-  };
+  taggedMentionsRef.current = { files: mentionedItems, sessions: mentionedSessions };
   restoreTaggedMentionsRef.current = resetMentions;
   // Read at drain time without re-running the effect on every keystroke.
   const tagFilesRef = useRef(tagFiles);
